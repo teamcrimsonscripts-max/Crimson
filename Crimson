@@ -1,0 +1,358 @@
+-- Reformatted version of the user's script: added line breaks and indentation for readability.
+-- I preserved the original identifiers and logic, only changing whitespace and indentation.
+
+if IY_LOADED and not _G.IY_DEBUG == true then -- error("Infinite Yield is already running!", 0)
+    return
+end
+
+pcall(function()
+    getgenv().IY_LOADED = true
+end)
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+
+local function missing(t, f, fallback)
+    if type(f) == t then
+        return f
+    end
+    return fallback
+end
+
+cloneref = missing("function", cloneref, function(...) return ... end)
+sethidden = missing("function", sethiddenproperty or set_hidden_property or set_hidden_prop)
+gethidden = missing("function", gethiddenproperty or get_hidden_property or get_hidden_prop)
+queueteleport = missing("function", queue_on_teleport or (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport))
+httprequest = missing("function", request or http_request or (syn and syn.request) or (http and http.request) or (fluxus and fluxus.request))
+everyClipboard = missing("function", setclipboard or toclipboard or set_clipboard or (Clipboard and Clipboard.set))
+firetouchinterest = missing("function", firetouchinterest)
+
+waxwritefile, waxreadfile = writefile, readfile
+writefile = missing("function", waxwritefile) and function(file, data, safe)
+    if safe == true then
+        return pcall(waxwritefile, file, data)
+    end
+    waxwritefile(file, data)
+end
+
+readfile = missing("function", waxreadfile) and function(file, safe)
+    if safe == true then
+        return pcall(waxreadfile, file)
+    end
+    return waxreadfile(file)
+end
+
+isfile = missing("function", isfile, readfile and function(file)
+    local success, result = pcall(function() return readfile(file) end)
+    return success and result ~= nil and result ~= ""
+end)
+
+makefolder = missing("function", makefolder)
+isfolder = missing("function", isfolder)
+waxgetcustomasset = missing("function", getcustomasset or getsynasset)
+hookfunction = missing("function", hookfunction)
+hookmetamethod = missing("function", hookmetamethod)
+getnamecallmethod = missing("function", getnamecallmethod or get_namecall_method)
+checkcaller = missing("function", checkcaller, function() return false end)
+newcclosure = missing("function", newcclosure)
+getgc = missing("function", getgc or get_gc_objects)
+setthreadidentity = missing("function", setthreadidentity or (syn and syn.set_thread_identity) or syn_context_set or setthreadcontext)
+replicatesignal = missing("function", replicatesignal)
+getconnections = missing("function", getconnections or get_signal_cons)
+
+Services = setmetatable({}, {
+    __index = function(self, name)
+        local success, cache = pcall(function() return cloneref(game:GetService(name)) end)
+        if success then
+            rawset(self, name, cache)
+            return cache
+        else
+            error("Invalid Roblox Service: " .. tostring(name))
+        end
+    end
+})
+
+COREGUI = Services.CoreGui
+Players = Services.Players
+UserInputService = Services.UserInputService
+TweenService = Services.TweenService
+HttpService = Services.HttpService
+MarketplaceService = Services.MarketplaceService
+RunService = Services.RunService
+TeleportService = Services.TeleportService
+StarterGui = Services.StarterGui
+GuiService = Services.GuiService
+Lighting = Services.Lighting
+ContextActionService = Services.ContextActionService
+ReplicatedStorage = Services.ReplicatedStorage
+GroupService = Services.GroupService
+PathService = Services.PathfindingService
+SoundService = Services.SoundService
+Teams = Services.Teams
+StarterPlayer = Services.StarterPlayer
+InsertService = Services.InsertService
+ChatService = Services.Chat
+ProximityPromptService = Services.ProximityPromptService
+ContentProvider = Services.ContentProvider
+StatsService = Services.Stats
+MaterialService = Services.MaterialService
+AvatarEditorService = Services.AvatarEditorService
+TextService = Services.TextService
+TextChatService = Services.TextChatService
+CaptureService = Services.CaptureService
+VoiceChatService = Services.VoiceChatService
+
+IYMouse = cloneref(Players.LocalPlayer:GetMouse())
+PlayerGui = cloneref(Players.LocalPlayer:FindFirstChildWhichIsA("PlayerGui"))
+PlaceId, JobId = game.PlaceId, game.JobId
+
+xpcall(function()
+    IsOnMobile = table.find({Enum.Platform.Android, Enum.Platform.IOS}, UserInputService:GetPlatform())
+end, function()
+    IsOnMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+end)
+
+isLegacyChat = TextChatService.ChatVersion == Enum.ChatVersion.LegacyChatService
+
+-- xylex & europa
+local iyassets = {
+    ["infiniteyield/assets/bindsandplugins.png"] = "rbxassetid://5147695474",
+    ["infiniteyield/assets/close.png"] = "rbxassetid://5054663650",
+    ["infiniteyield/assets/editaliases.png"] = "rbxassetid://5147488658",
+    ["infiniteyield/assets/editkeybinds.png"] = "rbxassetid://129697930",
+    ["infiniteyield/assets/edittheme.png"] = "rbxassetid://4911962991",
+    ["infiniteyield/assets/editwaypoints.png"] = "rbxassetid://5147488592",
+    ["infiniteyield/assets/imgstudiopluginlogo.png"] = "rbxassetid://4113050383",
+    ["infiniteyield/assets/logo.png"] = "rbxassetid://1352543873",
+    ["infiniteyield/assets/minimize.png"] = "rbxassetid://2406617031",
+    ["infiniteyield/assets/pin.png"] = "rbxassetid://6234691350",
+    ["infiniteyield/assets/reference.png"] = "rbxassetid://3523243755",
+    ["infiniteyield/assets/settings.png"] = "rbxassetid://1204397029"
+}
+
+local function getcustomasset(asset)
+    if waxgetcustomasset then
+        local success, result = pcall(function() return waxgetcustomasset(asset) end)
+        if success and result ~= nil and result ~= "" then
+            return result
+        end
+    end
+    return iyassets[asset]
+end
+
+if makefolder and isfolder and writefile and isfile then
+    pcall(function() -- good executor trust
+        local assets = "https://raw.githubusercontent.com/infyiff/backup/refs/heads/main/"
+        for _, folder in {"infiniteyield", "infiniteyield/assets"} do
+            if not isfolder(folder) then
+                makefolder(folder)
+            end
+        end
+        for path in iyassets do
+            if not isfile(path) then
+                writefile(path, game:HttpGet((path:gsub("infiniteyield/", assets))))
+            end
+        end
+        if IsOnMobile then
+            writefile("infiniteyield/assets/.nomedia")
+        end
+    end)
+end
+
+currentVersion = "6.3.4"
+
+ScaledHolder = Instance.new("Frame")
+Scale = Instance.new("UIScale")
+Holder = Instance.new("Frame")
+Title = Instance.new("TextLabel")
+Dark = Instance.new("Frame")
+Cmdbar = Instance.new("TextBox")
+CMDsF = Instance.new("ScrollingFrame")
+cmdListLayout = Instance.new("UIListLayout")
+SettingsButton = Instance.new("ImageButton")
+ColorsButton = Instance.new("ImageButton")
+Settings = Instance.new("Frame")
+Prefix = Instance.new("TextLabel")
+PrefixBox = Instance.new("TextBox")
+Keybinds = Instance.new("TextLabel")
+StayOpen = Instance.new("TextLabel")
+Button = Instance.new("Frame")
+On = Instance.new("TextButton")
+Positions = Instance.new("TextLabel")
+EventBind = Instance.new("TextLabel")
+Plugins = Instance.new("TextLabel")
+Example = Instance.new("TextButton")
+Notification = Instance.new("Frame")
+Title_2 = Instance.new("TextLabel")
+Text_2 = Instance.new("TextLabel")
+CloseButton = Instance.new("TextButton")
+CloseImage = Instance.new("ImageLabel")
+PinButton = Instance.new("TextButton")
+PinImage = Instance.new("ImageLabel")
+Tooltip = Instance.new("Frame")
+Title_3 = Instance.new("TextLabel")
+Description = Instance.new("TextLabel")
+IntroBackground = Instance.new("Frame")
+Logo = Instance.new("ImageLabel")
+Credits = Instance.new("TextBox")
+KeybindsFrame = Instance.new("Frame")
+Close = Instance.new("TextButton")
+Add = Instance.new("TextButton")
+Delete = Instance.new("TextButton")
+Holder_2 = Instance.new("ScrollingFrame")
+Example_2 = Instance.new("Frame")
+Text_3 = Instance.new("TextLabel")
+Delete_2 = Instance.new("TextButton")
+KeybindEditor = Instance.new("Frame")
+background_2 = Instance.new("Frame")
+Dark_3 = Instance.new("Frame")
+Directions = Instance.new("TextLabel")
+BindTo = Instance.new("TextButton")
+TriggerLabel = Instance.new("TextLabel")
+BindTriggerSelect = Instance.new("TextButton")
+Add_2 = Instance.new("TextButton")
+Toggles = Instance.new("ScrollingFrame")
+ClickTP = Instance.new("TextLabel")
+Select = Instance.new("TextButton")
+ClickDelete = Instance.new("TextLabel")
+Select_2 = Instance.new("TextButton")
+Cmdbar_2 = Instance.new("TextBox")
+Cmdbar_3 = Instance.new("TextBox")
+CreateToggle = Instance.new("TextLabel")
+Button_2 = Instance.new("Frame")
+On_2 = Instance.new("TextButton")
+shadow_2 = Instance.new("Frame")
+PopupText_2 = Instance.new("TextLabel")
+Exit_2 = Instance.new("TextButton")
+ExitImage_2 = Instance.new("ImageLabel")
+PositionsFrame = Instance.new("Frame")
+Close_3 = Instance.new("TextButton")
+Delete_5 = Instance.new("TextButton")
+Part = Instance.new("TextButton")
+Holder_4 = Instance.new("ScrollingFrame")
+Example_4 = Instance.new("Frame")
+Text_5 = Instance.new("TextLabel")
+Delete_6 = Instance.new("TextButton")
+TP = Instance.new("TextButton")
+AliasesFrame = Instance.new("Frame")
+Close_2 = Instance.new("TextButton")
+Delete_3 = Instance.new("TextButton")
+Holder_3 = Instance.new("ScrollingFrame")
+Example_3 = Instance.new("Frame")
+Text_4 = Instance.new("TextLabel")
+Delete_4 = Instance.new("TextButton")
+Aliases = Instance.new("TextLabel")
+PluginsFrame = Instance.new("Frame")
+Close_4 = Instance.new("TextButton")
+Add_3 = Instance.new("TextButton")
+Holder_5 = Instance.new("ScrollingFrame")
+Example_5 = Instance.new("Frame")
+Text_6 = Instance.new("TextLabel")
+Delete_7 = Instance.new("TextButton")
+PluginEditor = Instance.new("Frame")
+background_3 = Instance.new("Frame")
+Dark_2 = Instance.new("Frame")
+Img = Instance.new("ImageButton")
+AddPlugin = Instance.new("TextButton")
+FileName = Instance.new("TextBox")
+About = Instance.new("TextLabel")
+Directions_2 = Instance.new("TextLabel")
+shadow_3 = Instance.new("Frame")
+PopupText_3 = Instance.new("TextLabel")
+Exit_3 = Instance.new("TextButton")
+ExitImage_3 = Instance.new("ImageLabel")
+AliasHint = Instance.new("TextLabel")
+PluginsHint = Instance.new("TextLabel")
+PositionsHint = Instance.new("TextLabel")
+ToPartFrame = Instance.new("Frame")
+background_4 = Instance.new("Frame")
+ChoosePart = Instance.new("TextButton")
+CopyPath = Instance.new("TextButton")
+Directions_3 = Instance.new("TextLabel")
+Path = Instance.new("TextLabel")
+shadow_4 = Instance.new("Frame")
+PopupText_5 = Instance.new("TextLabel")
+Exit_4 = Instance.new("TextButton")
+ExitImage_5 = Instance.new("ImageLabel")
+logs = Instance.new("Frame")
+shadow = Instance.new("Frame")
+Hide = Instance.new("TextButton")
+ImageLabel = Instance.new("ImageLabel")
+PopupText = Instance.new("TextLabel")
+Exit = Instance.new("TextButton")
+ImageLabel_2 = Instance.new("ImageLabel")
+background = Instance.new("Frame")
+chat = Instance.new("Frame")
+Clear = Instance.new("TextButton")
+SaveChatlogs = Instance.new("TextButton")
+Toggle = Instance.new("TextButton")
+scroll_2 = Instance.new("ScrollingFrame")
+join = Instance.new("Frame")
+Toggle_2 = Instance.new("TextButton")
+Clear_2 = Instance.new("TextButton")
+scroll_3 = Instance.new("ScrollingFrame")
+listlayout = Instance.new("UIListLayout", scroll_3)
+selectChat = Instance.new("TextButton")
+selectJoin = Instance.new("TextButton")
+
+local function randomString()
+    local length = math.random(10, 20)
+    local array = {}
+    for i = 1, length do
+        array[i] = string.char(math.random(32, 126))
+    end
+    return table.concat(array)
+end
+
+PARENT = nil
+if get_hidden_gui or gethui then
+    local hiddenUI = get_hidden_gui or gethui
+    local Main = Instance.new("ScreenGui")
+    Main.Name = randomString()
+    Main.Parent = hiddenUI()
+    PARENT = Main
+elseif (not is_sirhurt_closure) and (syn and syn.protect_gui) then
+    local Main = Instance.new("ScreenGui")
+    Main.Name = randomString()
+    syn.protect_gui(Main)
+    Main.Parent = COREGUI
+    PARENT = Main
+elseif COREGUI:FindFirstChild("RobloxGui") then
+    PARENT = COREGUI.RobloxGui
+else
+    local Main = Instance.new("ScreenGui")
+    Main.Name = randomString()
+    Main.Parent = COREGUI
+    PARENT = Main
+end
+
+shade1 = {}
+shade2 = {}
+shade3 = {}
+text1 = {}
+text2 = {}
+scroll = {}
+
+ScaledHolder.Name = randomString()
+ScaledHolder.Size = UDim2.fromScale(1, 1)
+ScaledHolder.BackgroundTransparency = 1
+ScaledHolder.Parent = PARENT
+
+Scale.Name = randomString()
+Holder.Name = randomString()
+Holder.Parent = ScaledHolder
+Holder.Active = true
+Holder.BackgroundColor3 = Color3.fromRGB(46, 46, 47)
+Holder.BorderSizePixel = 0
+Holder.Position = UDim2.new(1, -250, 1, -220)
+Holder.Size = UDim2.new(0, 250, 0, 220)
+Holder.ZIndex = 10
+table.insert(shade2, Holder)
+
+Title.Name = "Title"
+Title.Parent = Holder
+Title.Active = true
+Title.BackgroundColor3 = Color3.fromRGB(36, 36, 37)
+Title.BorderSizePixel = 0
+Title.Size = UDim2.new(0, 250, 0
